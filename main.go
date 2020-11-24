@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
-	flag "github.com/spf13/pflag"
 	"log"
 	"math/rand"
 	"os"
+	"os/exec"
+	"syscall"
 	"time"
+
+	flag "github.com/spf13/pflag"
 )
 
 func usage() {
@@ -20,7 +23,7 @@ func usage() {
 }
 
 func main() {
-	options := []string{"run", "child-mode", "setup-netns", "setup-veth", "ps", "exec", "images", "rmi"}
+	options := []string{"run", "child-mode", "setup-netns", "setup-veth", "ps", "exec", "images", "rmi", "exec-child"}
 
 	if len(os.Args) < 2 || !stringInSlice(os.Args[1], options) {
 		usage()
@@ -63,6 +66,31 @@ func main() {
 			}
 		}
 		initContainer(*mem, *swap, *pids, *cpus, fs.Args()[0], fs.Args()[1:])
+	case "exec-child":
+		fs := flag.FlagSet{}
+		fs.ParseErrorsWhitelist.UnknownFlags = true
+
+		img := fs.String("img", "", "")
+		root := fs.String("root", "", "")
+
+		if err := fs.Parse(os.Args[2:]); err != nil {
+			fmt.Println("Error parsing: ", err)
+		}
+
+		imgConfig := parseContainerConfig(*img)
+
+		doOrDieWithMsg(syscall.Chroot(*root), "Unable to chroot")
+		os.Chdir("/")
+
+		doOrDieWithMsg(syscall.Mount("proc", "/proc", "proc", 0, ""), "Unable to mount proc")
+		doOrDieWithMsg(syscall.Mount("sysfs", "/sys", "sysfs", 0, ""), "Unable to mount sysfs")
+
+		cmd := exec.Command(fs.Args()[0], fs.Args()[1:]...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Env = imgConfig.Config.Env
+		doOrDieWithMsg(cmd.Run(), "Unable to exec command in container")
 	case "child-mode":
 		fs := flag.FlagSet{}
 		fs.ParseErrorsWhitelist.UnknownFlags = true

@@ -1,13 +1,14 @@
 package main
 
 import (
-	"golang.org/x/sys/unix"
 	"log"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func getPidForRunningContainer(containerID string) int {
@@ -55,15 +56,16 @@ func execInContainer(containerId string) {
 	if !exists {
 		log.Fatalf("Unable to get image details")
 	}
-	imgConfig := parseContainerConfig(imageShaHex)
 	containerMntPath := getGockerContainersPath() + "/" + containerId + "/fs/mnt"
 	createCGroups(containerId, false)
-	doOrDieWithMsg(syscall.Chroot(containerMntPath), "Unable to chroot")
-	os.Chdir("/")
-	cmd := exec.Command(os.Args[3], os.Args[4:]...)
+
+	args := []string{"exec-child"}
+	args = append(args, "--img="+imageShaHex)
+	args = append(args, "--root="+containerMntPath)
+	args = append(args, os.Args[3:]...)
+	cmd := exec.Command("/proc/self/exe", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = imgConfig.Config.Env
-	doOrDieWithMsg(cmd.Run(), "Unable to exec command in container")
+	doOrDie(cmd.Run())
 }
